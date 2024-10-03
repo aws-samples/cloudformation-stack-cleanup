@@ -1,8 +1,8 @@
 # Overview
 
-This is a ibrary built with Poetry that holds Python code for `cfncli` utility. See Poetry docs on how to use.
+This is a library built with Poetry that holds Python code for `cfncli` utility. See Poetry docs on how to use.
 
-# pre-requisite:
+# Pre-requisite:
 Install poetry
 ```
 pip install poetry
@@ -15,13 +15,15 @@ poetry install
 
 This will install the `cfncli` CLI along with any other project dependency. All commands have help text, so you can run `cfncli --help` to see all available commands.
 
-## Install a sample cloudformation stack  and a ssm-parameter to test the cfncli functionality 
+## Deploy a sample cloudformation stack  and a ssm-parameter to test the cfncli functionality 
+```bash 
 aws cloudformation create-stack \
   --stack-name sampleforcleanup-Stack\
   --template-body file://samples/sample-cfn-stack.yaml \
   --parameters ParameterKey=VpcId,ParameterValue=vpc-<> \
   --region us-east-1
-
+  ```
+```bash 
 aws ssm put-parameter \
     --name "/sampleforcleanup/database/password" \
     --value "your_db_password" \
@@ -29,24 +31,12 @@ aws ssm put-parameter \
     --description "Database password for my app" \
     --tier "Standard" \
     --region "us-east-1"
-
+```
+```bash 
 aws s3api create-bucket \
     --bucket samplesorcleanup-unmanagedbucket-<REGION>-<ACCOUNT ID> \
-    --region us-east-1 \
-
-
-<!-- aws dynamodb create-table \
-    --table-name SampleForCleanup-MyDynamoDBTable \
-    --attribute-definitions \
-        AttributeName=PrimaryKey,AttributeType=S \
-        AttributeName=SortKey,AttributeType=N \
-    --key-schema \
-        AttributeName=PrimaryKey,KeyType=HASH \
-        AttributeName=SortKey,KeyType=RANGE \
-    --provisioned-throughput \
-        ReadCapacityUnits=5,WriteCapacityUnits=5 \
-    --region us-east-1 \
-    --deletion-protection-enabled -->
+    --region us-east-1
+```
 
 ## Command to start clean up
 ```
