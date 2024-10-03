@@ -1,0 +1,96 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Sample CloudFormation stack with a Security Group, S3 Bucket, and DynamoDB Table with deletion protection enabled.
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: The ID of the VPC where the security group will be created.
+
+Resources:
+  # Security Group with no inbound rules
+  SampleSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group with no inbound or outbound rules
+      VpcId: !Ref VpcId
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 10.0.0.0/24
+          Description: Allow outbound HTTPS traffic to 10.0.0.0/24
+
+  # S3 Bucket
+  SampleS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub sample-s3-bucket-${AWS::Region}-${AWS::AccountId}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W35
+            reason: "Access logging is not required for this bucket."
+      checkov:
+        skip:
+          - id: CKV_AWS_18
+            comment: "Access logging is not required for this bucket."      
+
+  SampleS3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref SampleS3Bucket
+      PolicyDocument:
+        Statement:
+          - Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource: !Sub "${SampleS3Bucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+
+  # DynamoDB Table with Deletion Protection
+  SampleDynamoDBTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Delete
+    Properties:
+      TableName: !Sub sampleforcleanup-MyDynamoDBTable-${AWS::Region}-${AWS::AccountId}
+      AttributeDefinitions:
+        - AttributeName: PrimaryKey
+          AttributeType: S
+        - AttributeName: SortKey
+          AttributeType: N
+      KeySchema:
+        - AttributeName: PrimaryKey
+          KeyType: HASH  # Partition key
+        - AttributeName: SortKey
+          KeyType: RANGE  # Sort key
+      BillingMode: PAY_PER_REQUEST
+      DeletionProtectionEnabled: true  # Deletion protection enabled
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W74
+            reason: "Using default AWS managed CMK for encryption."
+          - id: W28
+            reason: "Explicit table name is required for this resource."
+      checkov:
+        skip:
+          - id: CKV_AWS_119
+            comment: "Using default AWS managed CMK for encryption."
+

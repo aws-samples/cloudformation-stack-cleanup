@@ -1,0 +1,27 @@
+*.js
+!jest.config.js
+!.eslintrc.js
+*.d.ts
+node_modules
+
+# CDK asset staging directory
+.cdk.staging
+cdk.out
+cdk.context.json
+
+.vscode
+.idea
+*.env*
+
+.DS_Store
+.pytest_cache
+**/__pycache__
+.ruff_cache
+.python-version
+
+**/.coverage
+**/check_main.py
+
+# Ignore all dotfiles in config/env for local development
+config/env/.*
+

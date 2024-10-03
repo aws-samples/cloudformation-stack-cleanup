@@ -1,0 +1,30 @@
+[tool.poetry]
+name = "cfncli"
+version = "0.1.0"
+description = "Python utility for Automation"
+authors = ["James Jacob", "Sandeep Singh"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+jsonschema = "4.17.3"
+click = "^8.1.7"
+click-log = "^0.4.0"
+colorlog = "^6.7.0"
+colorama = "^0.4.6"
+
+[tool.poetry.group.dev.dependencies]
+pre-commit = "3.0.4"
+pytest = "8.1.1"
+mock = "5.1.0"
+pytest-mock = "3.14.0"
+moto = "4.1.14"
+coverage = "^7.4.3"
+pip-audit = "^2.7.1"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+cfncli = "cfncli:start_cli"
