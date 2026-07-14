@@ -55,10 +55,12 @@ Resources:
           - Effect: Deny
             Principal: "*"
             Action: "s3:*"
-            Resource: !Sub "${SampleS3Bucket.Arn}/*"
+            Resource:
+              - !GetAtt SampleS3Bucket.Arn
+              - !Sub "${SampleS3Bucket.Arn}/*"
             Condition:
               Bool:
-                aws:SecureTransport: false
+                aws:SecureTransport: "false"
 
   # DynamoDB Table with Deletion Protection
   SampleDynamoDBTable:
