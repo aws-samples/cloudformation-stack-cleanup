@@ -3,20 +3,26 @@ Supporting code for [Automate deletion of AWS CloudFormation stacks and associat
 
 This is a reference implementation of a Python CLI tool called `cfncli` utility to demonstrate how the concepts explained in the above pattern for cleaning up CloudFormation Stacks and associated resources can be practically used. See docs below on how to use.
 
-# Pre-requisite:
-Install poetry
-```
-pip install poetry
-```
-For installing cfncli,
+# Prerequisites
+- Python 3.13 or later
+- [pipx](https://pipx.pypa.io/stable/how-to/install-pipx.html)
+- [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html), [configured](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-quickstart.html) with credentials for the account you want to clean up
 
+Install Poetry:
+```bash
+pipx install poetry==2.5.1
+```
+
+Install `cfncli` and its dependencies, then activate the virtual environment so that `cfncli` is on your PATH:
 ```bash
 poetry install
+eval $(poetry env activate)
+cfncli --help
 ```
 
-This will install the `cfncli` CLI along with any other project dependencies. All commands have help text, so you can run `cfncli --help` to see all available commands.
+All commands have help text, so you can run `cfncli --help` to see all available commands.
 
-## Deploy a sample cloudformation stack and a ssm-parameter to test the cfncli functionality 
+## Deploy a sample cloudformation stack and unmanaged resources
 ```bash 
 aws cloudformation create-stack \
   --stack-name sampleforcleanup-Stack\

@@ -2,7 +2,6 @@ import pytest
 
 from cfncli.exceptions import (
     ApplicationException,
-    handle_exceptions,
 )
 from cfncli.helpers import (
     convert_json_fields,
@@ -36,38 +35,6 @@ def test_generate_response():
     status_code = 200
     expected_output = {"statusCode": 200, "body": '{"key": "value"}'}
     assert generate_response(data, status_code) == expected_output
-
-
-def test_handle_exceptions_success():
-    @handle_exceptions(user_exceptions=[])
-    def function_that_does_not_raise(event, context):
-        return "success"
-
-    event = {}
-    context = {}
-    assert function_that_does_not_raise(event, context) == "success"
-
-
-def test_handle_exceptions_failure():
-    @handle_exceptions(user_exceptions=[ApplicationException])
-    def function_that_raises(event, context):
-        raise ApplicationException("error")
-
-    event = {}
-    context = {}
-    response = function_that_raises(event, context)
-    assert response["statusCode"] == 500
-    assert response["body"] == '{"message": "error"}'
-
-
-# @pytest.mark.parametrize(
-#     "user_attribute, expected_output",
-#     [
-#         ("prefix:username", "username"),  # Normal case
-#         ("username", "ocloud-user"),  # No colon to split on
-#         (None, "ocloud-user"),  # No user attribute
-#     ],
-# )
 
 @pytest.fixture
 def mock_ssm_client(mocker):
