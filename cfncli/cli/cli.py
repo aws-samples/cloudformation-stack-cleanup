@@ -1,5 +1,6 @@
 import boto3
 import click
+from botocore.exceptions import ProfileNotFound
 import click_log
 import logging
 
@@ -45,7 +46,10 @@ CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
 @click.pass_context
 def cli(ctx, profile, region, account_id):
     ctx.ensure_object(dict)
-    boto3.setup_default_session(profile_name=profile, region_name=region)
+    try:
+        boto3.setup_default_session(profile_name=profile, region_name=region)
+    except ProfileNotFound as error:
+        raise click.UsageError(str(error))
     region = region or boto3.DEFAULT_SESSION.region_name
     if not region:
         raise click.UsageError("Specify --region or configure a default AWS Region")

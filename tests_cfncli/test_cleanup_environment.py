@@ -3,7 +3,6 @@ import json
 import boto3
 import click
 import pytest
-from botocore.exceptions import ProfileNotFound
 from click.testing import CliRunner
 
 from cfncli.cli import cleanup_environment as ce
@@ -52,7 +51,8 @@ def test_cli_requires_region(aws, monkeypatch, tmp_path):
 
 def test_cli_uses_profile(aws):
     result = CliRunner().invoke(cli, ["-p", "cfncli-missing-profile", "-r", REGION, "dev", "cleanup-env", "-pl", "dev"])
-    assert isinstance(result.exception, ProfileNotFound)
+    assert result.exit_code == 2
+    assert "The config profile (cfncli-missing-profile) could not be found" in result.output
 
 
 def test_cli_prompt_defaults_to_no(aws):

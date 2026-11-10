@@ -55,28 +55,40 @@ Replace `<REGION>` and `<ACCOUNT_ID>` with your AWS Region and account ID.
 cfncli -r us-east-1  dev cleanup-env  --prefix-list sampleforcleanup 
 ```
 
+S3 delivers server access logs [on a best-effort basis, usually within a few hours](https://docs.aws.amazon.com/AmazonS3/latest/userguide/ServerLogs.html). If a log arrives in `sampleforcleanup-access-logs-<REGION>-<ACCOUNT_ID>` after `cfncli` empties it, the stack deletion fails because the bucket is not empty. Run the command again: `cfncli` selects the stack in `DELETE_FAILED` status, empties the bucket again, and retries the deletion.
+
 ## Sample output
 ```
-cfncli --region us-east-1  dev cleanup-env --prefix-list sampleforcleanup
-Cleaning up: ['sampleforcleanup'] in xxxxxxxxxx:us-east-1
-Do you want to proceed? [Y/n]: Y
-No S3 buckets
+cfncli -r us-east-1 dev cleanup-env --prefix-list sampleforcleanup
+Cleaning up: ['sampleforcleanup'] in <ACCOUNT_ID>:us-east-1
+Do you want to proceed? [y/N]: y
+The following S3 buckets will be emptied
+sampleforcleanup-access-logs-us-east-1-<ACCOUNT_ID>
+sampleforcleanup-unmanagedbucket-us-east-1-<ACCOUNT_ID>
+Do you want to proceed with emptying these S3 buckets? [y/N]: y
+Emptied S3 bucket: sampleforcleanup-access-logs-us-east-1-<ACCOUNT_ID>
+Emptied S3 bucket: sampleforcleanup-unmanagedbucket-us-east-1-<ACCOUNT_ID>
 No ECR repositories
 No Lambda functions in VPC
 The following DynamoDB tables will have their deletion protection removed:
-sampleforcleanup-MyDynamoDBTable
-Do you want to proceed with removing deletion protection from these tables? [Y/n]: Y
-Deletion protection disabled for DynamoDB table 'sampleforcleanup-MyDynamoDBTable'.
+sampleforcleanup-MyDynamoDBTable-us-east-1-<ACCOUNT_ID>
+Do you want to proceed with removing deletion protection from these tables? [y/N]: y
+Deletion protection disabled for DynamoDB table 'sampleforcleanup-MyDynamoDBTable-us-east-1-<ACCOUNT_ID>'.
 The following CloudFormation stacks will be deleted:
 sampleforcleanup-Stack
-Do you want to proceed with deleting these CloudFormation stacks? [Y/n]: Y
+Do you want to proceed with deleting these CloudFormation stacks? [y/N]: y
 Initiated deletion of CloudFormation stack: sampleforcleanup-Stack
 Waiting for stack sampleforcleanup-Stack to be deleted...
 CloudFormation stack sampleforcleanup-Stack deleted successfully.
+The following s3_buckets will be deleted:
+sampleforcleanup-unmanagedbucket-us-east-1-<ACCOUNT_ID>
+Do you want to proceed with deleting these s3_buckets? [y/N]: y
+Deleted S3 bucket: sampleforcleanup-unmanagedbucket-us-east-1-<ACCOUNT_ID>
 The following ssm_params will be deleted:
 /sampleforcleanup/database/password
-Do you want to proceed with deleting these ssm_params? [Y/n]: Y
+Do you want to proceed with deleting these ssm_params? [y/N]: y
 Deleted SSM Parameter: /sampleforcleanup/database/password
+Cleaned up: ['sampleforcleanup']
 ```
 
 ## Security
