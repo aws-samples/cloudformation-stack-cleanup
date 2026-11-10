@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Sample CloudFormation stack with a Security Group, S3 Bucket, and DynamoDB Table with deletion protection enabled.
+Description: Sample CloudFormation stack with a Security Group, S3 Bucket with an access log bucket, and DynamoDB Table encrypted with a customer managed KMS key and with deletion protection enabled.
 
 Parameters:
   VpcId:
@@ -11,7 +11,7 @@ Resources:
   SampleSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Security group with no inbound or outbound rules
+      GroupDescription: Security group with no inbound rules and HTTPS egress to 10.0.0.0/24
       VpcId: !Ref VpcId
       SecurityGroupEgress:
         - IpProtocol: tcp
@@ -20,15 +20,19 @@ Resources:
           CidrIp: 10.0.0.0/24
           Description: Allow outbound HTTPS traffic to 10.0.0.0/24
 
-  # S3 Bucket
-  SampleS3Bucket:
+  # S3 Bucket for server access logs of SampleS3Bucket
+  SampleS3LogBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub sample-s3-bucket-${AWS::Region}-${AWS::AccountId}
+      BucketName: !Sub sampleforcleanup-access-logs-${AWS::Region}-${AWS::AccountId}
+      AccessControl: Private
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
-              SSEAlgorithm: AES256
+              SSEAlgorithm: AES256  # Server access log destination buckets must use SSE-S3
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         IgnorePublicAcls: true
@@ -40,11 +44,73 @@ Resources:
       cfn_nag:
         rules_to_suppress:
           - id: W35
-            reason: "Access logging is not required for this bucket."
+            reason: "This bucket is the server access log destination. Delivering its logs to itself causes an infinite loop of logs."
       checkov:
         skip:
           - id: CKV_AWS_18
-            comment: "Access logging is not required for this bucket."      
+            comment: "This bucket is the server access log destination. Delivering its logs to itself causes an infinite loop of logs."
+      guard:
+        # S3_BUCKET_LOGGING_ENABLED: this bucket is the server access log destination.
+        # S3_BUCKET_DEFAULT_LOCK_ENABLED: buckets with S3 Object Lock enabled can't be used as server access log destinations.
+        SuppressedRules:
+          - S3_BUCKET_LOGGING_ENABLED
+          - S3_BUCKET_DEFAULT_LOCK_ENABLED
+
+  SampleS3LogBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref SampleS3LogBucket
+      PolicyDocument:
+        Statement:
+          - Sid: AllowS3ServerAccessLogs
+            Effect: Allow
+            Principal:
+              Service: logging.s3.amazonaws.com
+            Action: "s3:PutObject"
+            Resource: !Sub "${SampleS3LogBucket.Arn}/access-logs/*"
+            Condition:
+              ArnLike:
+                aws:SourceArn: !Sub "arn:${AWS::Partition}:s3:::sample-s3-bucket-${AWS::Region}-${AWS::AccountId}"
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt SampleS3LogBucket.Arn
+              - !Sub "${SampleS3LogBucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+
+  # S3 Bucket
+  SampleS3Bucket:
+    Type: AWS::S3::Bucket
+    DependsOn: SampleS3LogBucketPolicy
+    Properties:
+      BucketName: !Sub sample-s3-bucket-${AWS::Region}-${AWS::AccountId}
+      AccessControl: Private
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !GetAtt SampleKmsKey.Arn
+            BucketKeyEnabled: true
+      LoggingConfiguration:
+        DestinationBucketName: !Ref SampleS3LogBucket
+        LogFilePrefix: access-logs/
+      ObjectLockEnabled: true  # No default retention, so objects can still be deleted
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
 
   SampleS3BucketPolicy:
     Type: AWS::S3::BucketPolicy
@@ -60,7 +126,24 @@ Resources:
               - !Sub "${SampleS3Bucket.Arn}/*"
             Condition:
               Bool:
-                aws:SecureTransport: "false"
+                aws:SecureTransport: false
+
+  # Customer managed KMS key for the S3 bucket and the DynamoDB table
+  SampleKmsKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: Customer managed key for the sample S3 bucket and DynamoDB table
+      EnableKeyRotation: true
+      PendingWindowInDays: 7
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: EnableIAMUserPermissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:root
+            Action: "kms:*"
+            Resource: "*"
 
   # DynamoDB Table with Deletion Protection
   SampleDynamoDBTable:
@@ -84,15 +167,11 @@ Resources:
         PointInTimeRecoveryEnabled: true
       SSESpecification:
         SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: !Ref SampleKmsKey
     Metadata:
       cfn_nag:
         rules_to_suppress:
-          - id: W74
-            reason: "Using default AWS managed CMK for encryption."
           - id: W28
             reason: "Explicit table name is required for this resource."
-      checkov:
-        skip:
-          - id: CKV_AWS_119
-            comment: "Using default AWS managed CMK for encryption."
 
