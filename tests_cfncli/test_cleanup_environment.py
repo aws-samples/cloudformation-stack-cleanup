@@ -41,6 +41,15 @@ def test_cli_rejects_wrong_account_id(aws):
     assert "does not match the account of the credentials" in result.output
 
 
+def test_cli_requires_region(aws, monkeypatch, tmp_path):
+    monkeypatch.setenv("AWS_CONFIG_FILE", str(tmp_path / "config"))
+    monkeypatch.delenv("AWS_DEFAULT_REGION", raising=False)
+    monkeypatch.delenv("AWS_REGION", raising=False)
+    result = CliRunner().invoke(cli, ["dev", "cleanup-env", "-pl", "dev"])
+    assert result.exit_code == 2
+    assert "Specify --region or configure a default AWS Region" in result.output
+
+
 def test_cli_uses_profile(aws):
     result = CliRunner().invoke(cli, ["-p", "cfncli-missing-profile", "-r", REGION, "dev", "cleanup-env", "-pl", "dev"])
     assert isinstance(result.exception, ProfileNotFound)
@@ -61,33 +70,46 @@ def test_gather_s3_buckets_is_prefix_and_region_scoped(aws):
     assert ce.gather_s3_buckets(["dev"], REGION) == ["dev-us-bucket"]
 
 
-def test_preprocessing_targets_only_stack_resources(aws):
-    ddb = boto3.client("dynamodb", region_name=REGION)
-    ddb.create_table(
+def test_gather_stack_resources(mocker):
+    nested_stack_id = "arn:aws:cloudformation:us-east-1:123456789012:stack/dev-nested/1"
+    pages = {
+        "dev-stack": [
+            {
+                "StackResourceSummaries": [
+                    {"ResourceType": "AWS::DynamoDB::Table", "PhysicalResourceId": "dev-stack-table", "ResourceStatus": "CREATE_COMPLETE"},
+                    {"ResourceType": "AWS::DynamoDB::Table", "PhysicalResourceId": "dev-deleted-table", "ResourceStatus": "DELETE_COMPLETE"},
+                    {"ResourceType": "AWS::Lambda::Function", "PhysicalResourceId": "dev-function", "ResourceStatus": "CREATE_COMPLETE"},
+                    {"ResourceType": "AWS::CloudFormation::Stack", "PhysicalResourceId": nested_stack_id, "ResourceStatus": "CREATE_COMPLETE"},
+                ]
+            }
+        ],
+        nested_stack_id: [
+            {
+                "StackResourceSummaries": [
+                    {"ResourceType": "AWS::DynamoDB::Table", "PhysicalResourceId": "dev-nested-table", "ResourceStatus": "CREATE_COMPLETE"},
+                ]
+            }
+        ],
+    }
+    client = mocker.Mock()
+    client.get_paginator.return_value.paginate.side_effect = lambda StackName: pages[StackName]
+    mocker.patch("cfncli.cli.cleanup_environment.boto3.client", return_value=client)
+    tables = ce.gather_stack_resources(["dev-stack"], "AWS::DynamoDB::Table", REGION)
+    assert tables == ["dev-stack-table", "dev-nested-table"]
+
+
+def test_gather_resources_takes_tables_from_stacks(aws, mocker):
+    boto3.client("dynamodb", region_name=REGION).create_table(
         TableName="dev-unmanaged-table",
         AttributeDefinitions=[{"AttributeName": "k", "AttributeType": "S"}],
         KeySchema=[{"AttributeName": "k", "KeyType": "HASH"}],
         BillingMode="PAY_PER_REQUEST",
     )
-    template = {
-        "Resources": {
-            "Table": {
-                "Type": "AWS::DynamoDB::Table",
-                "Properties": {
-                    "TableName": "dev-stack-table",
-                    "AttributeDefinitions": [{"AttributeName": "k", "AttributeType": "S"}],
-                    "KeySchema": [{"AttributeName": "k", "KeyType": "HASH"}],
-                    "BillingMode": "PAY_PER_REQUEST",
-                },
-            }
-        }
-    }
-    boto3.client("cloudformation", region_name=REGION).create_stack(
-        StackName="dev-stack", TemplateBody=json.dumps(template)
-    )
+    mocker.patch.object(ce, "gather_cloudformation_stacks", return_value=["dev-stack"])
+    stack_resources = mocker.patch.object(ce, "gather_stack_resources", return_value=[])
     resources = ce.gather_resources(["dev"], REGION)
-    assert resources["cloudformation_stacks"] == ["dev-stack"]
-    assert resources["ddb_tables"] == ["dev-stack-table"]
+    assert resources["ddb_tables"] == []
+    stack_resources.assert_any_call(["dev-stack"], "AWS::DynamoDB::Table", REGION)
 
 
 def test_empty_ecr_repository_with_more_than_100_images(mocker):

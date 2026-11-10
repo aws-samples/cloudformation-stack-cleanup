@@ -47,6 +47,8 @@ def cli(ctx, profile, region, account_id):
     ctx.ensure_object(dict)
     boto3.setup_default_session(profile_name=profile, region_name=region)
     region = region or boto3.DEFAULT_SESSION.region_name
+    if not region:
+        raise click.UsageError("Specify --region or configure a default AWS Region")
     caller_account_id = get_account_id(region)
     if account_id and account_id != caller_account_id:
         raise click.UsageError(

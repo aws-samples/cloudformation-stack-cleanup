@@ -18,7 +18,7 @@ cfncli = "cfncli:start_cli"
 [tool.poetry.group.dev.dependencies]
 pytest = "9.2.0"
 pytest-mock = "3.17.0"
-moto = { version = "5.2.5", extras = ["cloudformation"] }
+moto = "5.2.5"
 coverage = "7.17.2"
 pip-audit = "2.10.1"
 
