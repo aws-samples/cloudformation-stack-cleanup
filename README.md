@@ -35,9 +35,10 @@ aws ssm put-parameter \
 ```
 ```bash 
 aws s3api create-bucket \
-    --bucket samplesorcleanup-unmanagedbucket-<REGION>-<ACCOUNT ID> \
+    --bucket sampleforcleanup-unmanagedbucket-<REGION>-<ACCOUNT_ID> \
     --region us-east-1
 ```
+Replace `<REGION>` and `<ACCOUNT_ID>` with your AWS Region and account ID.
 
 ## Command to start clean up
 ```
