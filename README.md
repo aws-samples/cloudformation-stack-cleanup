@@ -1,12 +1,16 @@
 # Overview
 Supporting code for [Automate deletion of AWS CloudFormation stacks and associated resources](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/automate-deletion-cloudformation-stacks-associated-resources.html).
 
-This is a reference implementation of a Python CLI tool called `cfncli` utility to demonstrate how the concepts explained in the above pattern for cleaning up CloudFormation Stacks and associated resources can be practically used. See docs below on how to use.
+This is a sample Python command line interface, `cfncli`, that demonstrates how the concepts explained in the above pattern for cleaning up CloudFormation Stacks and associated resources can be practically used. See docs below on how to use.
+
+> This is sample code, for non-production usage. You should work with your security and legal teams to meet your organizational security, regulatory and compliance requirements before deployment.
 
 # Prerequisites
 - Python 3.13 or later
 - [pipx](https://pipx.pypa.io/stable/how-to/install-pipx.html)
-- [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html), [configured](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-quickstart.html) with credentials for the account you want to clean up
+- [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html), [configured](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-quickstart.html) with credentials for a non-production account
+
+The commands in this README and `cfncli` use these credentials to create and delete the sample resources. When you use `cfncli` on your own stacks, the credentials also need permission to delete the resources in those stacks, because CloudFormation [uses your credentials](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-iam-servicerole.html) for stack operations unless the stack has a service role.
 
 Install Poetry:
 ```bash
@@ -51,7 +55,7 @@ Replace `<REGION>` and `<ACCOUNT_ID>` with your AWS Region and account ID.
 cfncli -r us-east-1  dev cleanup-env  --prefix-list sampleforcleanup 
 ```
 
-## Sample Ouptut
+## Sample output
 ```
 cfncli --region us-east-1  dev cleanup-env --prefix-list sampleforcleanup
 Cleaning up: ['sampleforcleanup'] in xxxxxxxxxx:us-east-1

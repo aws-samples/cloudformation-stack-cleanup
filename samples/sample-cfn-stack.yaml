@@ -11,7 +11,7 @@ Resources:
   SampleSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Security group with no inbound or outbound rules
+      GroupDescription: Security group with no inbound rules and HTTPS egress to 10.0.0.0/24
       VpcId: !Ref VpcId
       SecurityGroupEgress:
         - IpProtocol: tcp
@@ -94,7 +94,9 @@ Resources:
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
-              SSEAlgorithm: AES256
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !GetAtt SampleKmsKey.Arn
+            BucketKeyEnabled: true
       LoggingConfiguration:
         DestinationBucketName: !Ref SampleS3LogBucket
         LogFilePrefix: access-logs/
@@ -126,11 +128,11 @@ Resources:
               Bool:
                 aws:SecureTransport: false
 
-  # Customer managed KMS key for the DynamoDB table
-  SampleDynamoDBTableKey:
+  # Customer managed KMS key for the S3 bucket and the DynamoDB table
+  SampleKmsKey:
     Type: AWS::KMS::Key
     Properties:
-      Description: Customer managed key for the sample DynamoDB table
+      Description: Customer managed key for the sample S3 bucket and DynamoDB table
       EnableKeyRotation: true
       PendingWindowInDays: 7
       KeyPolicy:
@@ -166,7 +168,7 @@ Resources:
       SSESpecification:
         SSEEnabled: true
         SSEType: KMS
-        KMSMasterKeyId: !Ref SampleDynamoDBTableKey
+        KMSMasterKeyId: !Ref SampleKmsKey
     Metadata:
       cfn_nag:
         rules_to_suppress:

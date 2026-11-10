@@ -3,35 +3,51 @@ import click
 from botocore.exceptions import ClientError
 
 from cfncli.helpers import raise_for_click
-import logging
 
-def log_inputs(func):
-    def wrapper(*args, **kwargs):
-        logger = logging.getLogger(__name__)
-        logger.info("Function: %s", func.__name__)
-        if args:
-            logger.info("Positional arguments: %s", args)
-        if kwargs:
-            logger.info("Keyword arguments: %s", kwargs)
-        result = func(*args, **kwargs)
-        logger.info("Returned value: %s", result)
-        return result
 
-    return wrapper
+def matches_prefix(name, prefixes):
+    """Returns True if any "/"-separated segment of name starts with one of the prefixes."""
+    return any(segment.startswith(tuple(prefixes)) for segment in name.split("/"))
+
 
 def gather_resources(substrings, region):
     """
     Gathers AWS resources including CloudFormation stacks, S3 buckets, and ECR repositories
     based on specified substrings and region.
     """
+    stacks = gather_cloudformation_stacks(substrings, region)
     resources = {
-        "cloudformation_stacks": gather_cloudformation_stacks(substrings, region),
+        "cloudformation_stacks": stacks,
         "s3_buckets": gather_s3_buckets(substrings, region),
         "ecr_repositories": gather_ecr_repositories(substrings, region),
-        "vpc_lambdas": gather_vpc_lambdas(substrings, region),
-        "ddb_tables": gather_ddb_tables(substrings, region),
+        "vpc_lambdas": gather_vpc_lambdas(
+            gather_stack_resources(stacks, "AWS::Lambda::Function", region), region
+        ),
+        "ddb_tables": gather_stack_resources(stacks, "AWS::DynamoDB::Table", region),
     }
     return resources
+
+
+def gather_stack_resources(stack_names, resource_type, region):
+    """
+    Gathers the physical IDs of resources of the specified type in the specified
+    stacks, including their nested stacks.
+    """
+    client = boto3.client("cloudformation", region_name=region)
+    paginator = client.get_paginator("list_stack_resources")
+    physical_ids = []
+    for stack_name in stack_names:
+        for page in paginator.paginate(StackName=stack_name):
+            for resource in page["StackResourceSummaries"]:
+                if "PhysicalResourceId" not in resource or resource["ResourceStatus"] == "DELETE_COMPLETE":
+                    continue
+                if resource["ResourceType"] == "AWS::CloudFormation::Stack":
+                    physical_ids.extend(
+                        gather_stack_resources([resource["PhysicalResourceId"]], resource_type, region)
+                    )
+                elif resource["ResourceType"] == resource_type:
+                    physical_ids.append(resource["PhysicalResourceId"])
+    return physical_ids
 
 
 def gather_unmanaged_resources(substrings, region):
@@ -63,10 +79,10 @@ def gather_cloudformation_stacks(substrings, region):
                 "DELETE_COMPLETE" not in stack["StackStatus"]
                 and "ParentId" not in stack
             ):
-                if any(sub in stack["StackName"] for sub in substrings):
+                if matches_prefix(stack["StackName"], substrings):
                     stack_infos.append((stack["StackName"], stack["CreationTime"]))
 
-    # Sort stacks by creation time in descending order so newer stacks are deleted last
+    # Sort stacks by creation time in descending order so newer stacks are deleted first
     sorted_stack_infos = sorted(stack_infos, key=lambda x: x[1], reverse=True)
 
     # Extract and return only the stack names from the sorted list
@@ -75,26 +91,14 @@ def gather_cloudformation_stacks(substrings, region):
 
 def gather_s3_buckets(substrings, region):
     """Gathers S3 buckets that include the specified substrings."""
-    s3 = boto3.resource("s3", region_name=region)
+    client = boto3.client("s3", region_name=region)
     buckets = []
-    for bucket in s3.buckets.all():
-        if any(sub in bucket.name for sub in substrings):
-            buckets.append(bucket.name)
+    paginator = client.get_paginator("list_buckets")
+    for page in paginator.paginate(BucketRegion=region):
+        for bucket in page.get("Buckets", []):
+            if matches_prefix(bucket["Name"], substrings):
+                buckets.append(bucket["Name"])
     return buckets
-
-
-def gather_ddb_tables(substrings, region):
-    """Gathers DynamoDB tables that include the specified substrings."""
-    tables = []
-    ddb_client = boto3.client("dynamodb", region_name=region)
-    paginator = ddb_client.get_paginator("list_tables")
-
-    for page in paginator.paginate():
-        for table_name in page["TableNames"]:
-            if any(sub in table_name for sub in substrings):
-                tables.append(table_name)
-
-    return tables
 
 
 def gather_ecr_repositories(substrings, region):
@@ -104,7 +108,7 @@ def gather_ecr_repositories(substrings, region):
     paginator = client.get_paginator("describe_repositories")
     for page in paginator.paginate():
         for repo in page["repositories"]:
-            if any(sub in repo["repositoryName"] for sub in substrings):
+            if matches_prefix(repo["repositoryName"], substrings):
                 repositories.append(repo["repositoryName"])
     return repositories
 
@@ -118,7 +122,7 @@ def gather_log_groups(substrings, region):
 
     for page in paginator.paginate():
         for log_group in page["logGroups"]:
-            if any(sub in log_group["logGroupName"] for sub in substrings):
+            if matches_prefix(log_group["logGroupName"], substrings):
                 log_groups.append(log_group["logGroupName"])
     return log_groups
 
@@ -142,27 +146,20 @@ def gather_ssm_params(substrings, region):
     return ssm_params
 
 
-def gather_vpc_lambdas(substrings, region):
+def gather_vpc_lambdas(function_names, region):
     """
-    Gathers Lambda functions by substrings, filters those in a VPC.
+    Filters the specified Lambda functions to those attached to a VPC.
 
-    :param substrings: List of substrings to match in Lambda function names.
+    :param function_names: List of Lambda function names from the target stacks.
     :param region: AWS region where the Lambda functions are deployed.
     :return: List of Lambda function names to be updated.
     """
     client = boto3.client("lambda", region_name=region)
     lambda_functions = []
-    paginator = client.get_paginator("list_functions")
-
-    for page in paginator.paginate():
-        for function in page["Functions"]:
-            if (
-                any(sub in function["FunctionName"] for sub in substrings)
-                and "VpcConfig" in function
-                and function["VpcConfig"].get("VpcId")
-            ):
-                lambda_functions.append(function["FunctionName"])
-
+    for function_name in function_names:
+        configuration = client.get_function_configuration(FunctionName=function_name)
+        if configuration.get("VpcConfig", {}).get("VpcId"):
+            lambda_functions.append(function_name)
     return lambda_functions
 
 
@@ -178,14 +175,20 @@ def empty_s3_buckets(bucket_names, region):
 def empty_ecr_repositories(repository_names, region):
     """Empties specified ECR repositories."""
     client = boto3.client("ecr", region_name=region)
+    paginator = client.get_paginator("list_images")
     for repo_name in repository_names:
-        images = client.list_images(repositoryName=repo_name)
-        image_ids = [
-            {"imageDigest": image["imageDigest"]}
-            for image in images.get("imageIds", [])
-        ]
+        digests = {
+            image["imageDigest"]
+            for page in paginator.paginate(repositoryName=repo_name)
+            for image in page["imageIds"]
+        }
+        image_ids = [{"imageDigest": digest} for digest in digests]
+        # BatchDeleteImage accepts at most 100 image IDs per call
+        for start in range(0, len(image_ids), 100):
+            client.batch_delete_image(
+                repositoryName=repo_name, imageIds=image_ids[start : start + 100]
+            )
         if image_ids:
-            client.batch_delete_image(repositoryName=repo_name, imageIds=image_ids)
             click.secho(f"Emptied ECR repository: {repo_name}", fg="red")
 
 
@@ -351,7 +354,7 @@ def cleanup_env(
 
     click.secho(f"Cleaning up: {substrings} in {account_id}:{region}", fg="red")
 
-    if click.confirm("Do you want to proceed?", default=True):
+    if click.confirm("Do you want to proceed?", default=False):
         # 1. Gather Resources
         resources = gather_resources(substrings, region)
 
@@ -362,7 +365,7 @@ def cleanup_env(
 
             # Adjusted condition to check no_confirm flag before calling click.confirm
             if no_confirm or click.confirm(
-                "Do you want to proceed with emptying these S3 buckets?", default=True
+                "Do you want to proceed with emptying these S3 buckets?", default=False
             ):
                 empty_s3_buckets(resources["s3_buckets"], region)
             # else:
@@ -376,7 +379,7 @@ def cleanup_env(
             click.secho("\n".join(resources["ecr_repositories"]), fg="red")
             if no_confirm or click.confirm(
                 "Do you want to proceed with emptying these ECR repositories?",
-                default=True,
+                default=False,
             ):
                 empty_ecr_repositories(resources["ecr_repositories"], region)
             # else:
@@ -392,7 +395,7 @@ def cleanup_env(
             click.secho("\n".join(resources["vpc_lambdas"]), fg="red")
             if no_confirm or click.confirm(
                 "Do you want to proceed with patching these Lambdas?",
-                default=True,
+                default=False,
             ):
                 update_lambda_vpc_config(resources["vpc_lambdas"], region)
             # else:
@@ -408,7 +411,7 @@ def cleanup_env(
             click.secho("\n".join(resources["ddb_tables"]), fg="red")
             if no_confirm or click.confirm(
                 "Do you want to proceed with removing deletion protection from these tables?",
-                default=True,
+                default=False,
             ):
                 remove_ddb_deletion_protection(resources["ddb_tables"], region)
             # else:
@@ -422,7 +425,7 @@ def cleanup_env(
             click.secho("\n".join(resources["cloudformation_stacks"]), fg="red")
             if no_confirm or click.confirm(
                 "Do you want to proceed with deleting these CloudFormation stacks?",
-                default=True,
+                default=False,
             ):
                 delete_resources(
                     {"cloudformation_stacks": resources["cloudformation_stacks"]},
@@ -448,7 +451,7 @@ def cleanup_env(
 
                 if no_confirm or click.confirm(
                     f"Do you want to proceed with deleting these {resource_type}?",
-                    default=True,
+                    default=False,
                 ):
                     for resource_name in resources:
                         delete_function(resource_name, region)

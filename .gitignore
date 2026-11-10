@@ -1,14 +1,6 @@
-*.js
-!jest.config.js
-!.eslintrc.js
-*.d.ts
-node_modules
 .scratch
-
-# CDK asset staging directory
-.cdk.staging
-cdk.out
-cdk.context.json
+.venv/
+dist/
 
 .vscode
 .idea
@@ -22,7 +14,3 @@ cdk.context.json
 
 **/.coverage
 **/check_main.py
-
-# Ignore all dotfiles in config/env for local development
-config/env/.*
-
